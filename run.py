@@ -6,9 +6,13 @@ import requests
 import json
 import atexit
 import socket
+import tifffile
+import viridis
+import numpy as np
 from multiprocessing import Process
 from flask import Flask, request, jsonify, abort, url_for, send_file
 from flask_script import Manager
+from PIL import Image
 
 app = Flask(__name__)
 app.config['DEBUG'] = True
@@ -22,6 +26,7 @@ manager = Manager(app)
 
 jobs = {}
 
+viridis_data = np.array(viridis.color)
 
 def abort_for_status(response):
     if response.status_code != 200:
@@ -35,9 +40,11 @@ def abort_for_status(response):
 @app.route('/<user>/<dataset>')
 def get_thumbnail(user, dataset):
     size = int(request.args.get('size', 128))
-    path = os.path.join('cache', user, dataset, '{}.jpg'.format(size))
+    force = bool(request.args.get('force', False))
+    jpg_path = os.path.join('cache', user, dataset, '{}.jpg'.format(size))
+    tif_path = os.path.join('cache', user, dataset, '{}.tif'.format(size))
 
-    if not os.path.exists(path):
+    if not os.path.exists(jpg_path) or force:
         # authenticate for path access
         token = request.args.get('token')
         headers = {'Auth-Token': token}
@@ -50,11 +57,19 @@ def get_thumbnail(user, dataset):
         slices = sorted(os.listdir(slice_path))
         fname = os.path.join(slice_path, slices[len(slices) / 2])
 
-        # resize and output
-        cmd = "ufo-launch read path={} ! rescale width={} height={} ! write filename={}".format(fname, size, size, path)
+        # resize
+        cmd = "ufo-launch --quieter read path={} ! rescale width={} height={} ! write bits=8 filename={}".format(fname, size, size, tif_path)
         output = subprocess.call(shlex.split(cmd))
 
-    return send_file(path, mimetype='image/jpeg')
+        # color
+        image = tifffile.imread(tif_path)
+        r = viridis_data[:,0][image] * 256
+        g = viridis_data[:,1][image] * 256
+        b = viridis_data[:,2][image] * 256
+        image = Image.fromarray(np.dstack((np.dstack((r, g)), b)).astype(np.uint8))
+        image.save(jpg_path)
+
+    return send_file(jpg_path, mimetype='image/jpeg')
 
 
 
