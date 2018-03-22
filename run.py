@@ -6,13 +6,10 @@ import requests
 import json
 import atexit
 import socket
-import tifffile
-import viridis
 import numpy as np
 from multiprocessing import Process
 from flask import Flask, request, jsonify, abort, url_for, send_file
 from flask_script import Manager
-from PIL import Image
 
 app = Flask(__name__)
 app.config['DEBUG'] = True
@@ -25,8 +22,6 @@ SERVICE_SECRET = '123'
 manager = Manager(app)
 
 jobs = {}
-
-viridis_data = np.array(viridis.color)
 
 def abort_for_status(response):
     if response.status_code != 200:
@@ -41,10 +36,9 @@ def abort_for_status(response):
 def get_thumbnail(user, dataset):
     size = int(request.args.get('size', 128))
     force = bool(request.args.get('force', False))
-    jpg_path = os.path.join('cache', user, dataset, '{}.jpg'.format(size))
-    tif_path = os.path.join('cache', user, dataset, '{}.tif'.format(size))
+    path = os.path.join('cache', user, dataset, '{}.jpg'.format(size))
 
-    if not os.path.exists(jpg_path) or force:
+    if not os.path.exists(path) or force:
         # authenticate for path access
         token = request.args.get('token')
         headers = {'Auth-Token': token}
@@ -55,22 +49,14 @@ def get_thumbnail(user, dataset):
         # get middle slice
         slice_path = os.path.join(r.json()['path'], 'slices')
         slices = sorted(os.listdir(slice_path))
-        fname = os.path.join(slice_path, slices[len(slices) / 2])
+        fname = os.path.join(slice_path, slices[int(len(slices) / 2)])
 
-        # resize
-        cmd = "ufo-launch --quieter read path={} ! rescale width={} height={} ! write bits=8 filename={}".format(fname, size, size, tif_path)
+        # resize and color
+        cmd = "ufo-launch --quieter read path={} ! rescale width={} height={} ! map-color ! write filename={}"
+        cmd = cmd.format(fname, size, size, path)
         output = subprocess.call(shlex.split(cmd))
 
-        # color
-        image = tifffile.imread(tif_path)
-        r = viridis_data[:,0][image] * 256
-        g = viridis_data[:,1][image] * 256
-        b = viridis_data[:,2][image] * 256
-        image = Image.fromarray(np.dstack((np.dstack((r, g)), b)).astype(np.uint8))
-        image.save(jpg_path)
-
-    return send_file(jpg_path, mimetype='image/jpeg')
-
+    return send_file(path, mimetype='image/jpeg')
 
 
 def register(host):
