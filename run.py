@@ -52,7 +52,7 @@ def get_thumbnail(user, dataset):
         fname = os.path.join(slice_path, slices[int(len(slices) / 2)])
 
         # resize and color
-        cmd = "ufo-launch --quieter read path={} ! rescale width={} height={} ! map-color ! write filename={}"
+        cmd = "ufo-launch --quieter read path={} ! crop width=512 height=512 from-center=true ! rescale width={} height={} ! map-color ! write filename={}"
         cmd = cmd.format(fname, size, size, path)
         output = subprocess.call(shlex.split(cmd))
 
