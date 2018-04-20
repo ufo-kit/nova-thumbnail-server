@@ -59,8 +59,15 @@ def get_thumbnail(user, dataset):
     return send_file(path, mimetype='image/jpeg')
 
 
+def get_local_ip_address():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80))
+    return s.getsockname()[0]
+
+
 def register(host):
-    data = dict(name=SERVICE_NAME, url='http://127.0.0.1:5003', secret=SERVICE_SECRET)
+    url = 'http://{}:{}'.format(get_local_ip_address(), 5003)
+    data = dict(name=SERVICE_NAME, url=url, secret=SERVICE_SECRET)
     requests.post('/'.join((host, 'services')), data=data)
 
 
