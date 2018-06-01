@@ -7,13 +7,18 @@ import json
 import atexit
 import socket
 import numpy as np
+
 from multiprocessing import Process
 from flask import Flask, request, jsonify, abort, url_for, send_file
 from flask_script import Manager
+from flask_cors import CORS
+from quickslice import build as qsb
+from quickslice import slice as qss
 
 app = Flask(__name__)
 app.config['DEBUG'] = True
 app.config['NOVA_API_URL'] = 'http://localhost:5000/api'
+CORS(app)
 
 SERVICE_NAME = 'thumbnail-server'
 SERVICE_DESCRIPTION = """Thumbnail server"""
@@ -57,6 +62,47 @@ def get_thumbnail(user, dataset):
         output = subprocess.call(shlex.split(cmd))
 
     return send_file(path, mimetype='image/jpeg')
+
+
+@app.route('/<user>/<dataset>/slice')
+def get_slice(user, dataset):
+    axis = request.args.get('axis', 'z')
+    intercept = float(request.args.get('intercept', .5))
+    colormap = request.args.get('colormap')
+    size = int(request.args.get('size', 128))
+    min_threshold = int(request.args.get('mint', 0))
+    max_threshold = int(request.args.get('maxt', 255))
+
+    path = os.path.join('cache', user, dataset, '{}.cct'.format(size))
+
+    if not os.path.exists(path):
+        directory = os.path.dirname(path)
+        try:
+            os.stat(directory)
+        except:
+            os.makedirs(directory)
+        # authenticate for path access
+        token = request.args.get('token')
+        headers = {'Auth-Token': token}
+        url = '{}/datasets/{}/{}'.format(app.config['NOVA_API_URL'], user, dataset)
+        r = requests.get(url, headers=headers)
+        abort_for_status(r)
+
+        # build cct
+        slice_path = os.path.join(r.json()['path'], 'slices')
+        qsb.build(slice_path, [size], True, path)
+
+    #create slice digest
+    identifier = "d={},s={},a={},i={},c={}".format(dataset, size, axis, intercept, colormap)
+    identifier = identifier.encode('utf-8')
+    slice_id = hashlib.sha256(identifier).hexdigest()
+
+    #create slice
+    output_path = os.path.join('cache', user, dataset, '{}.png'.format(slice_id))
+    plane = '{}{}'.format(axis, intercept)
+    qss.slice(path, plane, [min_threshold, max_threshold], colormap, True, output_path)
+
+    return send_file(output_path, mimetype='image/png')
 
 
 def get_local_ip_address():
